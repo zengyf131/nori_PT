@@ -30,6 +30,9 @@ NORI_NAMESPACE_BEGIN
  */
 class Accel {
 public:
+
+    struct OctreeNode;
+
     /**
      * \brief Register a triangle mesh for inclusion in the acceleration
      * data structure
@@ -40,6 +43,7 @@ public:
 
     /// Build the acceleration data structure (currently a no-op)
     void build();
+    OctreeNode *build(TBoundingBox<Point3f> box, std::vector<Point3i> triangles, int depth);
 
     /// Return an axis-aligned box that bounds the scene
     const BoundingBox3f &getBoundingBox() const { return m_bbox; }
