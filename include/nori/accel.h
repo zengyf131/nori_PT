@@ -32,6 +32,7 @@ class Accel {
 public:
 
     struct OctreeNode;
+    struct NodeWithT;
 
     /**
      * \brief Register a triangle mesh for inclusion in the acceleration

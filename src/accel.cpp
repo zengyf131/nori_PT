@@ -20,6 +20,8 @@
 #include <Eigen/Geometry>
 #include <stack>
 #include <algorithm>
+#include <tbb/parallel_for.h>
+#include <nori/timer.h>
 
 NORI_NAMESPACE_BEGIN
 
@@ -38,6 +40,7 @@ struct Accel::OctreeNode
     BoundingBox3f bbox;
     OctreeNode(BoundingBox3f b)
     {
+        isLeaf = false;
         for (int i = 0; i < 8;i++)
         {
             child[i] = nullptr;
@@ -52,39 +55,54 @@ struct Accel::OctreeNode
     }
 };
 
+struct Accel::NodeWithT
+{
+    OctreeNode* node;
+    float t;
+};
+
 Accel::OctreeNode *Accel::build(BoundingBox3f box, std::vector<int> triangles, int depth) {
     if (triangles.size() == 0)
         return nullptr;
 
     if (triangles.size() < 10 || depth > 2.0 / 3 * log2(m_mesh->getTriangleCount()))
+    {
+        // for (int i = 0; i < (int)triangles.size(); i++)
+        //     std::cout << triangles[i] << ' ';
+        // std::cout << std::endl;
         return new OctreeNode(box, triangles);
+    }
 
     std::vector<int> list[8];
     MatrixXf vertices = m_mesh->getVertexPositions();
+    MatrixXu faces = m_mesh->getIndices();
 
     for (int triIndex = 0; triIndex < (int)triangles.size(); triIndex++) {
-        for (int i = 0; i < 8; ++i) {
-            int triangleIndex = triangles[triIndex];
-            Point3i triangle(m_mesh->getIndices()(0, triangleIndex), m_mesh->getIndices()(1, triangleIndex), m_mesh->getIndices()(2, triangleIndex));
-            Point3f triMinPoint = vertices.col(triangle[0]), triMaxPoint = vertices.col(triangle[0]);
-            for (int j = 1; j < 3; j++)
+        int triangleIndex = triangles[triIndex];
+        Point3i triangle(faces(0, triangleIndex), faces(1, triangleIndex), faces(2, triangleIndex));
+        Point3f triMinPoint = vertices.col(triangle[0]), triMaxPoint = vertices.col(triangle[0]);
+        for (int j = 1; j < 3; j++)
+        {
+            for (int k = 0; k < 3; k++)
             {
-                for (int k = 0; k < 3; k++)
+                if (triMinPoint[k] > vertices.col(triangle[j])[k])
                 {
-                    if (triMinPoint[k] > vertices.col(triangle[j])[k])
-                    {
-                        triMinPoint[k] = vertices.col(triangle[j])[k];
-                    }
-                    else if (triMaxPoint[k] > vertices.col(triangle[j])[k])
-                    {
-                        triMaxPoint[k] = vertices.col(triangle[j])[k];
-                    }
+                    triMinPoint[k] = vertices.col(triangle[j])[k];
+                }
+                else if (triMaxPoint[k] < vertices.col(triangle[j])[k])
+                {
+                    triMaxPoint[k] = vertices.col(triangle[j])[k];
                 }
             }
-            Point3f boxMinPoint((i % 2 == 0) ? box.min[0] : box.getCenter()[0], (i % 4 < 2) ? box.min[1] : box.getCenter()[1], (i / 4 == 0) ? box.min[2] : box.getCenter()[2]);
-            Point3f boxMaxPoint((i % 2 == 1) ? box.max[0] : box.getCenter()[0], (i % 4 >= 2) ? box.max[1] : box.getCenter()[1], (i / 4 == 1) ? box.max[2] : box.getCenter()[2]);
-            if (triMinPoint[0] >= boxMinPoint[0] && triMinPoint[1] >= boxMinPoint[1] && triMinPoint[2] >= boxMinPoint[2]
-             && triMaxPoint[0] <= boxMaxPoint[0] && triMaxPoint[1] <= boxMaxPoint[1] && triMaxPoint[2] <= boxMaxPoint[2])
+        }
+        // std::cout << "start" << std::endl;
+        for (int i = 0; i < 8; ++i) {
+            Point3f boxMinPoint((i % 2 == 0) ? box.min[0] : box.getCenter()[0], (i % 4 < 2) ? box.min[1] : box.getCenter()[1], (i < 4) ? box.min[2] : box.getCenter()[2]);
+            Point3f boxMaxPoint((i % 2 == 1) ? box.max[0] : box.getCenter()[0], (i % 4 >= 2) ? box.max[1] : box.getCenter()[1], (i >= 4) ? box.max[2] : box.getCenter()[2]);
+            // std::cout << boxMinPoint[0] << ' ' << boxMinPoint[1] << ' ' << boxMinPoint[2] << std::endl;
+            // std::cout << boxMaxPoint[0] << ' ' << boxMaxPoint[1] << ' ' << boxMaxPoint[2] << std::endl;
+            if (triMaxPoint[0] >= boxMinPoint[0] && triMaxPoint[1] >= boxMinPoint[1] && triMaxPoint[2] >= boxMinPoint[2]
+             && triMinPoint[0] <= boxMaxPoint[0] && triMinPoint[1] <= boxMaxPoint[1] && triMinPoint[2] <= boxMaxPoint[2])
             {
                 list[i].push_back(triangleIndex);
             }
@@ -92,22 +110,35 @@ Accel::OctreeNode *Accel::build(BoundingBox3f box, std::vector<int> triangles, i
     }
 
     OctreeNode *node = new OctreeNode(box);
-    for (int i = 0; i < 8; ++i)
-    {
-        Point3f boxMinPoint((i % 2 == 0) ? box.min[0] : box.getCenter()[0], (i % 4 < 2) ? box.min[1] : box.getCenter()[1], (i / 4 == 0) ? box.min[2] : box.getCenter()[2]);
-        Point3f boxMaxPoint((i % 2 == 1) ? box.max[0] : box.getCenter()[0], (i % 4 >= 2) ? box.max[1] : box.getCenter()[1], (i / 4 == 1) ? box.max[2] : box.getCenter()[2]);
-        node->child[i] = build(BoundingBox3f(boxMinPoint, boxMaxPoint), list[i], depth + 1);
-    }
+    tbb::parallel_for(tbb::blocked_range<int>(0, 8), [node, list, box, depth, this](const tbb::blocked_range<int> &r)
+        {
+            for (int i = r.begin(); i != r.end(); i++)
+            {
+                Point3f boxMinPoint((i % 2 == 0) ? box.min[0] : box.getCenter()[0], (i % 4 < 2) ? box.min[1] : box.getCenter()[1], (i < 4) ? box.min[2] : box.getCenter()[2]);
+                Point3f boxMaxPoint((i % 2 == 1) ? box.max[0] : box.getCenter()[0], (i % 4 >= 2) ? box.max[1] : box.getCenter()[1], (i >= 4) ? box.max[2] : box.getCenter()[2]);
+                node->child[i] = this->build(BoundingBox3f(boxMinPoint, boxMaxPoint), list[i], depth + 1);
+            }
+        }
+    );
+    // for (int i = 0; i < 8; ++i)
+    // {
+    //     Point3f boxMinPoint((i % 2 == 0) ? box.min[0] : box.getCenter()[0], (i % 4 < 2) ? box.min[1] : box.getCenter()[1], (i < 4) ? box.min[2] : box.getCenter()[2]);
+    //     Point3f boxMaxPoint((i % 2 == 1) ? box.max[0] : box.getCenter()[0], (i % 4 >= 2) ? box.max[1] : box.getCenter()[1], (i >= 4) ? box.max[2] : box.getCenter()[2]);
+    //     node->child[i] = build(BoundingBox3f(boxMinPoint, boxMaxPoint), list[i], depth + 1);
+    // }
     return node;
 }
 
 void Accel::build() {
+    std::cout << "Building Octree...";
+    Timer timer;
     std::vector<int> list;
     for (int i = 0; i < (int)m_mesh->getTriangleCount(); i++)
     {
         list.push_back(i);
     }
     root = build(m_bbox, list, 0);
+    std::cout << "done in " << timer.elapsedString() << std::endl;
 }
 
 bool Accel::rayIntersect(const Ray3f &ray_, Intersection &its, bool shadowRay) const {
@@ -116,30 +147,15 @@ bool Accel::rayIntersect(const Ray3f &ray_, Intersection &its, bool shadowRay) c
 
     Ray3f ray(ray_); /// Make a copy of the ray (we will need to update its '.maxt' value)
 
-    // /* Brute force search through all triangles */
-    // for (uint32_t idx = 0; idx < m_mesh->getTriangleCount(); ++idx) {
-    //     float u, v, t;
-    //     if (m_mesh->rayIntersect(idx, ray, u, v, t)) {
-    //         /* An intersection was found! Can terminate
-    //         immediately if this is a shadow ray query */
-    //         if (shadowRay)
-    //             return true;
-    //         ray.maxt = its.t = t;
-    //         its.uv = Point2f(u, v);
-    //         its.mesh = m_mesh;
-    //         f = idx;
-    //         foundIntersection = true;
-    //     }
-    // }
     std::stack<OctreeNode*> callStack;
     callStack.push(root);
     float u, v, t;
-    auto cmp = [ray](const OctreeNode *a, const OctreeNode *b)->bool
+    
+    auto cmp = [](const NodeWithT a, const NodeWithT b)->bool
     {
-        float ta, tb, tmax;
-        a->bbox.rayIntersect(ray, ta, tmax);
-        b->bbox.rayIntersect(ray, tb, tmax);
-        return ta > tb;
+        if (a.node == nullptr) return false;
+        if (b.node == nullptr) return true;
+        return a.t > b.t;
     };
     while (!callStack.empty())
     {
@@ -148,19 +164,27 @@ bool Accel::rayIntersect(const Ray3f &ray_, Intersection &its, bool shadowRay) c
         if (!node->bbox.rayIntersect(ray)) continue;
         if (!node->isLeaf)
         {
-            // std::vector<OctreeNode*> hitList;
+            NodeWithT hitList[8];
             for (int i = 0; i < 8; i++)
             {
                 OctreeNode *child = node->child[i];
+                hitList[i].node = nullptr;
                 float tmax;
-                if (child && child->bbox.rayIntersect(ray))
-                    callStack.push_back(child);
+                if (child && child->bbox.rayIntersect(ray, hitList[i].t, tmax) && hitList[i].t < ray.maxt)
+                {
+                    hitList[i].node = child;
+                }
+                // if (child && child->bbox.rayIntersect(ray))
+                // {
+                //     callStack.push(child);
+                // }
             }
-            // sort(hitList.begin(), hitList.end(), cmp);
-            // for (int i = 0; i < (int)hitList.size(); i++)
-            // {
-            //     callStack.push(hitList[i]);
-            // }
+            std::sort(hitList, hitList + 8, cmp);
+            for (int i = 0; i < 8; i++)
+            {
+                if (hitList[i].node == nullptr) break;
+                callStack.push(hitList[i].node);
+            }
             continue;
         }
         for (int i = 0; i < (int)node->triangles.size(); i++)
@@ -172,12 +196,12 @@ bool Accel::rayIntersect(const Ray3f &ray_, Intersection &its, bool shadowRay) c
                 ray.maxt = its.t = t;
                 its.uv = Point2f(u, v);
                 its.mesh = m_mesh;
-                f = i;
+                f = node->triangles[i];
                 foundIntersection = true;
             }
         }
     }
-
+    
     if (foundIntersection) {
         /* At this point, we now know that there is an intersection,
            and we know the triangle index of the closest such intersection.
