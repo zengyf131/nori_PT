@@ -43,7 +43,7 @@ public:
 
     /// Build the acceleration data structure (currently a no-op)
     void build();
-    OctreeNode *build(TBoundingBox<Point3f> box, std::vector<Point3i> triangles, int depth);
+    OctreeNode *build(TBoundingBox<Point3f> box, std::vector<int> triangles, int depth);
 
     /// Return an axis-aligned box that bounds the scene
     const BoundingBox3f &getBoundingBox() const { return m_bbox; }
@@ -72,6 +72,7 @@ public:
 private:
     Mesh         *m_mesh = nullptr; ///< Mesh (only a single one for now)
     BoundingBox3f m_bbox;           ///< Bounding box of the entire scene
+    OctreeNode   *root = nullptr;
 };
 
 NORI_NAMESPACE_END
