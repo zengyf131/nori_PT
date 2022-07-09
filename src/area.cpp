@@ -1,5 +1,6 @@
 #include <nori/emitter.h>
 #include <nori/sampler.h>
+#include <nori/mesh.h>
 
 NORI_NAMESPACE_BEGIN
 
@@ -31,7 +32,7 @@ public:
         SampleResult rec = mesh->sample(sampler);
         eRec.srcPos = rec.p;
         eRec.n = rec.n;
-        eRec.wi = (eRec.srcPos - eRec.hitPos).normalized():
+        eRec.wi = (eRec.srcPos - eRec.hitPos).normalized();
         eRec.shadowRay = Ray3f(eRec.hitPos, eRec.wi, Epsilon, (eRec.srcPos - eRec.hitPos).norm() - Epsilon);
         eRec.pdf = pdf(mesh, eRec);
         if (eRec.pdf > 0 && !std::isnan(eRec.pdf) && !std::isinf(eRec.pdf))

@@ -64,7 +64,7 @@ struct Intersection {
     std::string toString() const;
 };
 
-struct sampleResult
+struct SampleResult
 {
     Point3f p;
     Normal3f n;
@@ -108,7 +108,7 @@ public:
     //// Return the centroid of the given triangle
     Point3f getCentroid(uint32_t index) const;
 
-    sampleResult sample(Sampler *sampler) const;
+    SampleResult sample(Sampler *sampler) const;
 
     /** \brief Ray-triangle intersection test
      *

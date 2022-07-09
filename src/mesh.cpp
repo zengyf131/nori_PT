@@ -50,11 +50,11 @@ void Mesh::activate() {
     disPdf.normalize();
 }
 
-sampleResult Mesh::sample(Sampler *sampler) const
+SampleResult Mesh::sample(Sampler *sampler) const
 {
-    sampleResult res;
+    SampleResult res;
     int triIndex = disPdf.sample(sampler->next1D());
-    Pointf2f rand2 = sampler.next2D();
+    Point2f rand2 = sampler->next2D();
     float alpha = 1 - sqrt(1 - rand2.x());
     float beta = rand2.y() * sqrt(1 - rand2.x());
     res.p = alpha * m_V.col(m_F(0, triIndex)) + beta * m_V.col(m_F(1, triIndex)) + (1 - alpha - beta) * m_V.col(m_F(2, triIndex));
