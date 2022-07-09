@@ -21,6 +21,7 @@
 #include <nori/object.h>
 #include <nori/frame.h>
 #include <nori/bbox.h>
+#include <nori/dpdf.h>
 
 NORI_NAMESPACE_BEGIN
 
@@ -63,6 +64,13 @@ struct Intersection {
     std::string toString() const;
 };
 
+struct sampleResult
+{
+    Point3f p;
+    Normal3f n;
+    float pdf;
+};
+
 /**
  * \brief Triangle mesh
  *
@@ -73,6 +81,7 @@ struct Intersection {
  */
 class Mesh : public NoriObject {
 public:
+
     /// Release all memory
     virtual ~Mesh();
 
@@ -91,11 +100,15 @@ public:
     //// Return an axis-aligned bounding box of the entire mesh
     const BoundingBox3f &getBoundingBox() const { return m_bbox; }
 
+    const DiscretePDF &getPdf() const { return disPdf; }
+
     //// Return an axis-aligned bounding box containing the given triangle
     BoundingBox3f getBoundingBox(uint32_t index) const;
 
     //// Return the centroid of the given triangle
     Point3f getCentroid(uint32_t index) const;
+
+    sampleResult sample(Sampler *sampler) const;
 
     /** \brief Ray-triangle intersection test
      *
@@ -176,6 +189,8 @@ protected:
     BSDF         *m_bsdf = nullptr;      ///< BSDF of the surface
     Emitter    *m_emitter = nullptr;     ///< Associated emitter, if any
     BoundingBox3f m_bbox;                ///< Bounding box of the mesh
+    DiscretePDF disPdf;
+    float area;
 };
 
 NORI_NAMESPACE_END

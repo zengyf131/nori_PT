@@ -22,6 +22,19 @@
 
 NORI_NAMESPACE_BEGIN
 
+struct EmitterQueryRecord {
+    Point3f hitPos;
+    Point3f srcPos;
+    Normal3f n;
+    Vector3f wi;
+    float pdf;
+    Ray3f shadowRay;
+
+    EmitterQueryRecord(const Point3f& hitPos, const Point3f& srcPos, const Normal3f& n) : hitPos(hitPos), srcPos(srcPos), n(n) {
+        wi = (srcPos - hitPos).normalized();
+    }
+};
+
 /**
  * \brief Superclass of all emitters
  */
@@ -33,6 +46,16 @@ public:
      * provided by this instance
      * */
     EClassType getClassType() const { return EEmitter; }
+
+    virtual ~Emitter() {}
+
+    virtual Color3f eval(const EmitterQueryRecord& record) const = 0;
+
+    virtual Color3f getRadiance() const = 0;
+
+    virtual float pdf(const Mesh* mesh, const EmitterQueryRecord& eRec) const = 0;
+
+    virtual Color3f sample(const Mesh* mesh, EmitterQueryRecord& eRec, Sampler*) const = 0;
 };
 
 NORI_NAMESPACE_END

@@ -38,6 +38,39 @@ void Mesh::activate() {
         m_bsdf = static_cast<BSDF *>(
             NoriObjectFactory::createInstance("diffuse", PropertyList()));
     }
+
+    area = 0;
+    disPdf.reserve(getTriangleCount());
+    for (int i = 0; i < getTriangleCount(); i++)
+    {
+        float a = surfaceArea(i);
+        area += a;
+        disPdf.append(a);
+    }
+    disPdf.normalize();
+}
+
+sampleResult Mesh::sample(Sampler *sampler) const
+{
+    sampleResult res;
+    int triIndex = disPdf.sample(sampler->next1D());
+    Pointf2f rand2 = sampler.next2D();
+    float alpha = 1 - sqrt(1 - rand2.x());
+    float beta = rand2.y() * sqrt(1 - rand2.x());
+    res.p = alpha * m_V.col(m_F(0, triIndex)) + beta * m_V.col(m_F(1, triIndex)) + (1 - alpha - beta) * m_V.col(m_F(2, triIndex));
+    if (m_N.size() != 0)
+    {
+        res.n = alpha * m_N.col(m_F(0, triIndex)) + beta * m_N.col(m_F(1, triIndex)) + (1 - alpha - beta) * m_N.col(m_F(2, triIndex));
+        res.n = res.n.normalized();
+    }
+    else
+    {
+        Vector3f a = m_V.col(m_F(1, triIndex)) - m_V.col(m_F(0, triIndex));
+        Vector3f b = m_V.col(m_F(2, triIndex)) - m_V.col(m_F(0, triIndex));
+        res.n = a.cross(b).normalized();
+    }
+    res.pdf = disPdf.getNormalization();
+    return res;
 }
 
 float Mesh::surfaceArea(uint32_t index) const {
