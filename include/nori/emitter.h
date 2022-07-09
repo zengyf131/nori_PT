@@ -30,9 +30,11 @@ struct EmitterQueryRecord {
     float pdf;
     Ray3f shadowRay;
 
-    EmitterQueryRecord(const Point3f& hitPos, const Point3f& srcPos, const Normal3f& n) : hitPos(hitPos), srcPos(srcPos), n(n) {
+    EmitterQueryRecord(const Point3f &hitPos, const Point3f &srcPos, const Normal3f &n) : hitPos(hitPos), srcPos(srcPos), n(n) {
         wi = (srcPos - hitPos).normalized();
     }
+
+    EmitterQueryRecord(const Point3f &hitPos) : hitPos(hitPos) {}
 };
 
 /**

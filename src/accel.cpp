@@ -26,10 +26,20 @@
 NORI_NAMESPACE_BEGIN
 
 void Accel::addMesh(Mesh *mesh) {
-    if (m_mesh)
-        throw NoriException("Accel: only a single mesh is supported!");
-    m_mesh = mesh;
-    m_bbox = m_mesh->getBoundingBox();
+    // if (m_mesh)
+    //     throw NoriException("Accel: only a single mesh is supported!");
+    // m_mesh = mesh;
+    // m_bbox = m_mesh->getBoundingBox();
+    m_meshes.push_back(mesh);
+    m_roots.push_back(nullptr);
+    if (m_meshes.size() == 1)
+    {
+        m_bbox = m_meshes[0]->getBoundingBox();
+    }
+    else
+    {
+        m_bbox.expandBy(mesh->getBoundingBox());
+    }
 }
 
 struct Accel::OctreeNode
@@ -61,11 +71,11 @@ struct Accel::NodeWithT
     float t;
 };
 
-Accel::OctreeNode *Accel::build(BoundingBox3f box, std::vector<int> triangles, int depth) {
+Accel::OctreeNode *Accel::build(Mesh *mesh, BoundingBox3f box, std::vector<int> triangles, int depth) {
     if (triangles.size() == 0)
         return nullptr;
 
-    if (triangles.size() < 10 || depth > 2.0 / 3 * log2(m_mesh->getTriangleCount()))
+    if (triangles.size() < 10 || depth > 2.0 / 3 * log2(mesh->getTriangleCount()))
     {
         // for (int i = 0; i < (int)triangles.size(); i++)
         //     std::cout << triangles[i] << ' ';
@@ -74,8 +84,8 @@ Accel::OctreeNode *Accel::build(BoundingBox3f box, std::vector<int> triangles, i
     }
 
     std::vector<int> list[8];
-    MatrixXf vertices = m_mesh->getVertexPositions();
-    MatrixXu faces = m_mesh->getIndices();
+    MatrixXf vertices = mesh->getVertexPositions();
+    MatrixXu faces = mesh->getIndices();
 
     for (int triIndex = 0; triIndex < (int)triangles.size(); triIndex++) {
         int triangleIndex = triangles[triIndex];
@@ -110,13 +120,13 @@ Accel::OctreeNode *Accel::build(BoundingBox3f box, std::vector<int> triangles, i
     }
 
     OctreeNode *node = new OctreeNode(box);
-    tbb::parallel_for(tbb::blocked_range<int>(0, 8), [node, list, box, depth, this](const tbb::blocked_range<int> &r)
+    tbb::parallel_for(tbb::blocked_range<int>(0, 8), [mesh, node, list, box, depth, this](const tbb::blocked_range<int> &r)
         {
             for (int i = r.begin(); i != r.end(); i++)
             {
                 Point3f boxMinPoint((i % 2 == 0) ? box.min[0] : box.getCenter()[0], (i % 4 < 2) ? box.min[1] : box.getCenter()[1], (i < 4) ? box.min[2] : box.getCenter()[2]);
                 Point3f boxMaxPoint((i % 2 == 1) ? box.max[0] : box.getCenter()[0], (i % 4 >= 2) ? box.max[1] : box.getCenter()[1], (i >= 4) ? box.max[2] : box.getCenter()[2]);
-                node->child[i] = this->build(BoundingBox3f(boxMinPoint, boxMaxPoint), list[i], depth + 1);
+                node->child[i] = this->build(mesh, BoundingBox3f(boxMinPoint, boxMaxPoint), list[i], depth + 1);
             }
         }
     );
@@ -132,12 +142,16 @@ Accel::OctreeNode *Accel::build(BoundingBox3f box, std::vector<int> triangles, i
 void Accel::build() {
     std::cout << "Building Octree...";
     Timer timer;
-    std::vector<int> list;
-    for (int i = 0; i < (int)m_mesh->getTriangleCount(); i++)
+    for (int meshIndex = 0; meshIndex < (int)m_meshes.size(); meshIndex++)
     {
-        list.push_back(i);
+        Mesh *mesh = m_meshes[meshIndex];
+        std::vector<int> list;
+        for (int i = 0; i < (int)mesh->getTriangleCount(); i++)
+        {
+            list.push_back(i);
+        }
+        m_roots[meshIndex] = build(mesh, mesh->getBoundingBox(), list, 0);
     }
-    root = build(m_bbox, list, 0);
     std::cout << "done in " << timer.elapsedString() << std::endl;
 }
 
@@ -147,57 +161,60 @@ bool Accel::rayIntersect(const Ray3f &ray_, Intersection &its, bool shadowRay) c
 
     Ray3f ray(ray_); /// Make a copy of the ray (we will need to update its '.maxt' value)
 
-    std::stack<OctreeNode*> callStack;
-    callStack.push(root);
     float u, v, t;
-    
     auto cmp = [](const NodeWithT a, const NodeWithT b)->bool
     {
         if (a.node == nullptr) return false;
         if (b.node == nullptr) return true;
         return a.t > b.t;
     };
-    while (!callStack.empty())
+    for (int meshIndex = 0; meshIndex < (int)m_meshes.size(); meshIndex++)
     {
-        OctreeNode *node = callStack.top();
-        callStack.pop();
-        if (!node->bbox.rayIntersect(ray)) continue;
-        if (!node->isLeaf)
+        std::stack<OctreeNode*> callStack;
+        callStack.push(m_roots[meshIndex]);
+
+        while (!callStack.empty())
         {
-            NodeWithT hitList[8];
-            for (int i = 0; i < 8; i++)
+            OctreeNode *node = callStack.top();
+            callStack.pop();
+            if (!node->bbox.rayIntersect(ray)) continue;
+            if (!node->isLeaf)
             {
-                OctreeNode *child = node->child[i];
-                hitList[i].node = nullptr;
-                float tmax;
-                if (child && child->bbox.rayIntersect(ray, hitList[i].t, tmax) && hitList[i].t < ray.maxt)
+                NodeWithT hitList[8];
+                for (int i = 0; i < 8; i++)
                 {
-                    hitList[i].node = child;
+                    OctreeNode *child = node->child[i];
+                    hitList[i].node = nullptr;
+                    float tmax;
+                    if (child && child->bbox.rayIntersect(ray, hitList[i].t, tmax) && hitList[i].t < ray.maxt)
+                    {
+                        hitList[i].node = child;
+                    }
+                    // if (child && child->bbox.rayIntersect(ray))
+                    // {
+                    //     callStack.push(child);
+                    // }
                 }
-                // if (child && child->bbox.rayIntersect(ray))
-                // {
-                //     callStack.push(child);
-                // }
+                std::sort(hitList, hitList + 8, cmp);
+                for (int i = 0; i < 8; i++)
+                {
+                    if (hitList[i].node == nullptr) break;
+                    callStack.push(hitList[i].node);
+                }
+                continue;
             }
-            std::sort(hitList, hitList + 8, cmp);
-            for (int i = 0; i < 8; i++)
+            for (int i = 0; i < (int)node->triangles.size(); i++)
             {
-                if (hitList[i].node == nullptr) break;
-                callStack.push(hitList[i].node);
-            }
-            continue;
-        }
-        for (int i = 0; i < (int)node->triangles.size(); i++)
-        {
-            if (m_mesh->rayIntersect(node->triangles[i], ray, u, v, t))
-            {
-                if (shadowRay)
-                    return true;
-                ray.maxt = its.t = t;
-                its.uv = Point2f(u, v);
-                its.mesh = m_mesh;
-                f = node->triangles[i];
-                foundIntersection = true;
+                if (m_meshes[meshIndex]->rayIntersect(node->triangles[i], ray, u, v, t))
+                {
+                    if (shadowRay)
+                        return true;
+                    ray.maxt = its.t = t;
+                    its.uv = Point2f(u, v);
+                    its.mesh = m_meshes[meshIndex];
+                    f = node->triangles[i];
+                    foundIntersection = true;
+                }
             }
         }
     }

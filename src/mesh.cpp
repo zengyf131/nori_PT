@@ -41,7 +41,7 @@ void Mesh::activate() {
 
     area = 0;
     disPdf.reserve(getTriangleCount());
-    for (int i = 0; i < getTriangleCount(); i++)
+    for (int i = 0; i < (int)getTriangleCount(); i++)
     {
         float a = surfaceArea(i);
         area += a;

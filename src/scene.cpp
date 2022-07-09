@@ -36,6 +36,18 @@ Scene::~Scene() {
     delete m_integrator;
 }
 
+const Mesh *Scene::getRandomEmitter(Sampler *sampler) const
+{
+    DiscretePDF disPdf;
+    disPdf.reserve(m_emitters.size());
+    for (int i = 0; i < (int)m_emitters.size(); i++)
+    {
+        disPdf.append(1);
+    }
+    disPdf.normalize();
+    return m_emitters[disPdf.sample(sampler->next1D())];
+}
+
 void Scene::activate() {
     m_accel->build();
 
@@ -61,6 +73,7 @@ void Scene::addChild(NoriObject *obj) {
                 Mesh *mesh = static_cast<Mesh *>(obj);
                 m_accel->addMesh(mesh);
                 m_meshes.push_back(mesh);
+                if (mesh->isEmitter()) m_emitters.push_back(mesh);
             }
             break;
         

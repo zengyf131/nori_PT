@@ -44,7 +44,7 @@ public:
 
     /// Build the acceleration data structure (currently a no-op)
     void build();
-    OctreeNode *build(TBoundingBox<Point3f> box, std::vector<int> triangles, int depth);
+    OctreeNode *build(Mesh *mesh, TBoundingBox<Point3f> box, std::vector<int> triangles, int depth);
 
     /// Return an axis-aligned box that bounds the scene
     const BoundingBox3f &getBoundingBox() const { return m_bbox; }
@@ -71,9 +71,9 @@ public:
     bool rayIntersect(const Ray3f &ray, Intersection &its, bool shadowRay) const;
 
 private:
-    Mesh         *m_mesh = nullptr; ///< Mesh (only a single one for now)
+    std::vector<Mesh *> m_meshes; ///< Mesh
     BoundingBox3f m_bbox;           ///< Bounding box of the entire scene
-    OctreeNode   *root = nullptr;
+    std::vector<OctreeNode *> m_roots;
 };
 
 NORI_NAMESPACE_END
