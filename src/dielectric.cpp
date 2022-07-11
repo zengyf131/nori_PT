@@ -42,8 +42,36 @@ public:
         return 0.0f;
     }
 
-    Color3f sample(BSDFQueryRecord &bRec, const Point2f &sample) const {
-        throw NoriException("Unimplemented!");
+    static Vector3f refract(const Vector3f& wi, const Vector3f& n, float eta) {
+        float cosThetaI = wi.dot(n);
+        if (cosThetaI < 0)
+            eta = 1.0f / eta;
+        float cosThetaTSqr = 1 - (1 - cosThetaI * cosThetaI) * (eta * eta);
+        if (cosThetaTSqr <= 0.0f)
+            return Vector3f(0.0f);
+        float sign = cosThetaI >= 0.0f ? 1.0f : -1.0f;
+        return n * (-cosThetaI * eta + sign * sqrt(cosThetaTSqr)) + wi * eta;
+    }
+
+    Color3f sample(BSDFQueryRecord& bRec, const Point2f& sample) const {
+        bRec.measure = EDiscrete;
+        float cosThetaI = Frame::cosTheta(bRec.wi);
+        float kr = fresnel(cosThetaI, m_extIOR, m_intIOR);
+        if (sample.x() < kr) {
+            bRec.wo = Vector3f(-bRec.wi.x(), -bRec.wi.y(), bRec.wi.z());
+            bRec.eta = 1.f;
+            return Color3f(1.0f);
+        } else {
+            Vector3f n = Vector3f(0.0f, 0.0f, 1.0f);
+            float factor = m_intIOR / m_extIOR;
+            if (Frame::cosTheta(bRec.wi) < 0.f) {
+                factor = m_extIOR / m_intIOR;
+                n.z() = -1.0f;
+            }
+            bRec.wo = refract(-bRec.wi, n, factor);
+            bRec.eta = m_intIOR / m_extIOR;
+            return Color3f(1.0f);
+        }
     }
 
     std::string toString() const {

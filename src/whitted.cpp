@@ -22,19 +22,33 @@ public:
             EmitterQueryRecord rec(ray.o, its.p, its.shFrame.n);
             Le = its.mesh->getEmitter()->eval(rec);
         }
-
-        const Mesh *lightMesh = scene->getRandomEmitter(sampler);
-        EmitterQueryRecord lightRec(its.p);
-        Lr = lightMesh->getEmitter()->sample(lightMesh, lightRec, sampler);
-        if (scene->rayIntersect(lightRec.shadowRay))
+        if (its.mesh->getBSDF()->isDiffuse())
         {
-            Lr = 0;
+            const Mesh *lightMesh = scene->getRandomEmitter(sampler);
+            EmitterQueryRecord lightRec(its.p);
+            Lr = lightMesh->getEmitter()->sample(lightMesh, lightRec, sampler);
+            if (scene->rayIntersect(lightRec.shadowRay))
+            {
+                Lr = 0;
+            }
+            float cosTheta = Frame::cosTheta(its.shFrame.toLocal(lightRec.wi));
+            if (cosTheta < 0) cosTheta = 0;
+            BSDFQueryRecord bsdfRec(its.toLocal(-ray.d), its.toLocal(lightRec.wi), ESolidAngle);
+            return Le + Lr * its.mesh->getBSDF()->eval(bsdfRec) * cosTheta / (1.0 / scene->getEmitters().size());
         }
-        float cosTheta = Frame::cosTheta(its.shFrame.toLocal(lightRec.wi));
-        if (cosTheta < 0) cosTheta = 0;
-        BSDFQueryRecord bsdfRec(its.toLocal(-ray.d), its.toLocal(lightRec.wi), ESolidAngle);
-
-        return Le + Lr * its.mesh->getBSDF()->eval(bsdfRec) * cosTheta / (1.0 / scene->getEmitters().size());
+        else
+        {
+            BSDFQueryRecord bsdfRec(its.toLocal(-ray.d));
+            Color3f refColor = its.mesh->getBSDF()->sample(bsdfRec, sampler->next2D());
+            if (sampler->next1D() < 0.95 && refColor.x() > 0)
+            {
+                return Li(scene, sampler, Ray3f(its.p, its.toWorld(bsdfRec.wo))) / 0.95 * refColor;
+            }
+            else
+            {
+                return Color3f(0);
+            }
+        }
     }
 
     std::string toString() const {
