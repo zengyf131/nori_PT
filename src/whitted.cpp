@@ -10,7 +10,7 @@ class WhittedIntegrator : public Integrator {
 public:
     WhittedIntegrator(const PropertyList &props) {}
 
-    Color3f Li(const Scene *scene, Sampler *sampler, const Ray3f &ray) const {
+    Color3f Li(const Scene *scene, Sampler *sampler, const Ray3f &ray) const override {
         /* Find the surface that is visible in the requested direction */
         Intersection its;
         if (!scene->rayIntersect(ray, its))
