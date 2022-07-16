@@ -42,7 +42,7 @@ public:
     }
 
     std::string toString() const {
-        return "WhittedIntegrator[]";
+        return "PathMatsIntegrator[]";
     }
 
 protected:
